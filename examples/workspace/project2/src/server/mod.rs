@@ -3,6 +3,7 @@ use actix_files::Files;
 use actix_web::*;
 use leptos::*;
 use leptos_actix::{generate_route_list, LeptosRoutes};
+use tracing::*;
 
 fn app() -> impl IntoView {
     view! { <App /> }
@@ -14,9 +15,9 @@ pub async fn run() -> std::io::Result<()> {
     simple_logger::init_with_level(log::Level::Debug).expect("couldn't initialize logging");
 
     let conf = get_configuration(None).await.unwrap();
-    let addr = conf.leptos_options.site_addr.clone();
+    let addr = conf.leptos_options.site_addr;
 
-    log::info!("serving at {addr}");
+    info!("serving at {addr}");
 
     // Generate the list of routes in your Leptos App
     let routes = generate_route_list(app);

@@ -1,6 +1,4 @@
-use std::vec;
-
-use crate::service::notify::Watched;
+use std::{ops::Deref, vec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
@@ -9,7 +7,7 @@ pub enum Change {
     /// sent when a lib target source file is changed
     LibSource,
     /// sent when an asset file changed
-    Asset(Watched),
+    Asset,
     /// sent when a style file changed
     Style,
     /// Cargo.toml changed
@@ -22,13 +20,17 @@ pub enum Change {
 pub struct ChangeSet(Vec<Change>);
 
 impl ChangeSet {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
     pub fn all_changes() -> Self {
         Self(vec![
             Change::BinSource,
             Change::LibSource,
             Change::Style,
             Change::Conf,
-            Change::Asset(Watched::Rescan),
+            Change::Asset,
         ])
     }
 
@@ -52,16 +54,13 @@ impl ChangeSet {
             || self.0.contains(&Change::Additional)
     }
 
-    pub fn asset_iter(&self) -> impl Iterator<Item = &Watched> {
-        self.0.iter().filter_map(|change| match change {
-            Change::Asset(a) => Some(a),
-            _ => None,
-        })
-    }
-
     pub fn need_style_build(&self, css_files: bool, css_in_source: bool) -> bool {
         (css_files && self.0.contains(&Change::Style))
             || (css_in_source && self.0.contains(&Change::LibSource))
+    }
+
+    pub fn need_assets_change(&self) -> bool {
+        self.0.contains(&Change::Asset)
     }
 
     pub fn add(&mut self, change: Change) -> bool {
@@ -71,5 +70,13 @@ impl ChangeSet {
         } else {
             false
         }
+    }
+}
+
+impl Deref for ChangeSet {
+    type Target = Vec<Change>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

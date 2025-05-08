@@ -12,21 +12,20 @@ mod profile;
 mod project;
 mod style;
 mod tailwind;
+mod version;
 
 use std::{fmt::Debug, sync::Arc};
 
 pub use self::cli::{BuildOpts, BuildTargets, Cli, Commands, Log, Opts};
-use crate::ext::{
-    anyhow::{Context, Result},
-    MetadataExt,
-};
-use anyhow::bail;
+use crate::ext::MetadataExt;
+use anyhow::{bail, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata::Metadata;
 pub use profile::Profile;
 pub use project::{Project, ProjectConfig};
 pub use style::StyleConfig;
 pub use tailwind::TailwindConfig;
+pub use version::*;
 
 pub struct Config {
     /// absolute path to the working dir
@@ -55,10 +54,10 @@ impl Config {
         bin_args: Option<&[String]>,
         build_targets: Option<&BuildTargets>,
     ) -> Result<Self> {
-        let metadata = Metadata::load_cleaned(manifest_path)?;
+        let metadata = Metadata::load_cleaned(manifest_path).unwrap();
 
         let mut projects =
-            Project::resolve(&cli, cwd, &metadata, watch, bin_args, build_targets).dot()?;
+            Project::resolve(&cli, cwd, &metadata, watch, bin_args, build_targets).unwrap();
 
         if projects.is_empty() {
             bail!("Please define leptos projects in the workspace Cargo.toml sections [[workspace.metadata.leptos]]")

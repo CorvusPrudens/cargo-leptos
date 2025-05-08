@@ -1,34 +1,33 @@
-use crate::ext::anyhow::{Context, Result};
-use clap::Args;
+use cargo_generate::{generate, GenerateArgs, TemplatePath};
+use clap::{ArgGroup, Args};
 
-use tokio::process::Command;
-
-use crate::ext::exe::Exe;
+use crate::internal_prelude::*;
 
 // A subset of the cargo-generate commands available.
 // See: https://github.com/cargo-generate/cargo-generate/blob/main/src/args.rs
 
 #[derive(Clone, Debug, Args, PartialEq, Eq)]
 #[clap(arg_required_else_help(true))]
+#[clap(group(ArgGroup::new("template").args(&["git", "path"]).required(true).multiple(false)))]
 #[clap(about)]
 pub struct NewCommand {
     /// Git repository to clone template from. Can be a full URL (like
     /// `https://github.com/leptos-rs/start`), or a shortcut for one of our
     /// built-in templates: `leptos-rs/start`, `leptos-rs/start-axum`,
     /// `leptos-rs/start-axum-workspace`, or `leptos-rs/start-aws`.
-    #[clap(short, long, group("SpecificPath"))]
+    #[clap(short, long, group = "git-arg")]
     pub git: Option<String>,
 
     /// Branch to use when installing from git
-    #[clap(short, long, conflicts_with = "tag")]
+    #[clap(short, long, conflicts_with = "tag", requires = "git-arg")]
     pub branch: Option<String>,
 
     /// Tag to use when installing from git
-    #[clap(short, long, conflicts_with = "branch")]
+    #[clap(short, long, conflicts_with = "branch", requires = "git-arg")]
     pub tag: Option<String>,
 
     /// Local path to copy the template from. Can not be specified together with --git.
-    #[clap(short, long, group("SpecificPath"))]
+    #[clap(short, long)]
     pub path: Option<String>,
 
     /// Directory to create / project name; if the name isn't in kebab-case, it will be converted
@@ -51,77 +50,56 @@ pub struct NewCommand {
 }
 
 impl NewCommand {
-    pub async fn run(&self) -> Result<()> {
-        let args = self.to_args();
-        let exe = Exe::CargoGenerate.get().await.dot()?;
+    pub fn run(self) -> Result<()> {
+        let Self {
+            git,
+            branch,
+            tag,
+            path,
+            name,
+            force,
+            verbose,
+            init,
+        } = self;
+        let args = GenerateArgs {
+            template_path: TemplatePath {
+                git: absolute_git_url(git),
+                branch,
+                tag,
+                path,
+                ..Default::default()
+            },
+            name,
+            force,
+            verbose,
+            init,
+            ..Default::default()
+        };
 
-        let mut process = Command::new(exe)
-            .arg("generate")
-            .args(&args)
-            .spawn()
-            .context("Could not spawn cargo-generate command (verify that it is installed)")?;
-        process.wait().await.dot()?;
+        generate(args).dot_anyhow()?;
+
         Ok(())
-    }
-
-    pub fn to_args(&self) -> Vec<String> {
-        let mut args = vec![];
-        opt_push(&mut args, "git", &absolute_git_url(&self.git));
-        opt_push(&mut args, "branch", &self.branch);
-        opt_push(&mut args, "tag", &self.tag);
-        opt_push(&mut args, "path", &self.path);
-        opt_push(&mut args, "name", &self.name);
-        bool_push(&mut args, "force", self.force);
-        bool_push(&mut args, "verbose", self.verbose);
-        bool_push(&mut args, "init", self.init);
-        args
-    }
-}
-
-fn bool_push(args: &mut Vec<String>, name: &str, set: bool) {
-    if set {
-        args.push(format!("--{name}"))
-    }
-}
-
-fn opt_push(args: &mut Vec<String>, name: &str, arg: &Option<String>) {
-    if let Some(arg) = arg {
-        args.push(format!("--{name}"));
-        args.push(arg.clone());
     }
 }
 
 /// Workaround to support short `new --git leptos-rs/start` command when behind Git proxy.
 /// See https://github.com/cargo-generate/cargo-generate/issues/752.
-fn absolute_git_url(url: &Option<String>) -> Option<String> {
-    match url {
-        Some(url) => match url.as_str() {
-            // leptos-rs official templates
-            // NB: The alternate workarounds enable an even shorter `cargo leptos new --git start-{{trunk | actix | axum | ..}}` command syntax
-            "start-trunk" => Some("https://github.com/leptos-rs/start-trunk".to_string()),
-            "leptos-rs/start-trunk" => Some("https://github.com/leptos-rs/start-trunk".to_string()),
+fn absolute_git_url(url: Option<String>) -> Option<String> {
+    url.map(|url| match url.as_str() {
+        "start-trunk" | "leptos-rs/start-trunk" => format_leptos_starter_url("start-trunk"),
+        "start-actix" | "leptos-rs/start" | "leptos-rs/start-actix" => {
+            format_leptos_starter_url("start-actix")
+        }
+        "start-axum" | "leptos-rs/start-axum" => format_leptos_starter_url("start-axum"),
+        "start-axum-workspace" | "leptos-rs/start-axum-workspace" => {
+            format_leptos_starter_url("start-axum-workspace")
+        }
+        "start-aws" | "leptos-rs/start-aws" => format_leptos_starter_url("start-aws"),
+        "start-spin" | "leptos-rs/start-spin" => format_leptos_starter_url("start-spin"),
+        _ => url,
+    })
+}
 
-            "start-actix" => Some("https://github.com/leptos-rs/start".to_string()),
-            "leptos-rs/start" => Some("https://github.com/leptos-rs/start".to_string()),
-            "leptos-rs/start-actix" => Some("https://github.com/leptos-rs/start".to_string()),
-
-            "start-axum" => Some("https://github.com/leptos-rs/start-axum".to_string()),
-            "leptos-rs/start-axum" => Some("https://github.com/leptos-rs/start-axum".to_string()),
-
-            "start-axum-workspace" => {
-                Some("https://github.com/leptos-rs/start-axum-workspace".to_string())
-            }
-            "leptos-rs/start-axum-workspace" => {
-                Some("https://github.com/leptos-rs/start-axum-workspace".to_string())
-            }
-            "start-aws" => Some("https://github.com/leptos-rs/start-aws".to_string()),
-            "leptos-rs/start-aws" => Some("https://github.com/leptos-rs/start-aws".to_string()),
-
-            "start-spin" => Some("https://github.com/leptos-rs/start-spin".to_string()),
-            "leptos-rs/start-spin" => Some("https://github.com/leptos-rs/start-spin".to_string()),
-
-            _ => Some(url.to_string()),
-        },
-        None => None,
-    }
+fn format_leptos_starter_url(repo: &str) -> String {
+    format!("https://github.com/leptos-rs/{repo}")
 }

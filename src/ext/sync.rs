@@ -1,4 +1,4 @@
-use crate::ext::anyhow::{bail, Context, Result};
+use crate::internal_prelude::*;
 use std::{
     net::SocketAddr,
     process::{Output, Stdio},
@@ -47,22 +47,23 @@ pub async fn wait_interruptible(
     mut process: Child,
     mut interrupt_rx: broadcast::Receiver<()>,
 ) -> Result<CommandResult<()>> {
+    trace!(?process, "Waiting for process to finish");
     tokio::select! {
         res = process.wait() => match res {
             Ok(exit) => {
                 if exit.success() {
-                    log::trace!("{name} process finished with success");
+                    trace!("{name} process finished with success");
                     Ok(CommandResult::Success(()))
                 } else {
-                    log::trace!("{name} process finished with code {:?}", exit.code());
+                    trace!("{name} process finished with code {:?}", exit.code());
                     Ok(CommandResult::Failure(()))
                 }
             }
             Err(e) => bail!("Command failed due to: {e}"),
         },
         _ = interrupt_rx.recv() => {
-            process.kill().await.context("Could not kill process")?;
-            log::trace!("{name} process interrupted");
+            process.kill().await.wrap_err("Could not kill process")?;
+            trace!("{name} process interrupted");
             Ok(CommandResult::Interrupted)
         }
     }
@@ -73,6 +74,7 @@ pub async fn wait_piped_interruptible(
     mut cmd: Command,
     mut interrupt_rx: broadcast::Receiver<()>,
 ) -> Result<CommandResult<Output>> {
+    trace!(?cmd, "Waiting for command (piped)");
     // see: https://docs.rs/tokio/latest/tokio/process/index.html
 
     cmd.kill_on_drop(true);
@@ -83,17 +85,17 @@ pub async fn wait_piped_interruptible(
         res = process.wait_with_output() => match res {
             Ok(output) => {
                 if output.status.success() {
-                    log::trace!("{name} process finished with success");
+                    trace!("{name} process finished with success");
                     Ok(CommandResult::Success(output))
                 } else {
-                    log::trace!("{name} process finished with code {:?}", output.status.code());
+                    trace!("{name} process finished with code {:?}", output.status.code());
                     Ok(CommandResult::Failure(output))
                 }
             }
             Err(e) => bail!("Command failed due to: {e}"),
         },
         _ = interrupt_rx.recv() => {
-            log::trace!("{name} process interrupted");
+            trace!("{name} process interrupted");
             Ok(CommandResult::Interrupted)
         }
     }
@@ -103,11 +105,11 @@ pub async fn wait_for_socket(name: &str, addr: SocketAddr) -> bool {
 
     for _ in 0..20 {
         if TcpStream::connect(&addr).await.is_ok() {
-            log::debug!("{name} server port {addr} open");
+            debug!("{name} server port {addr} open");
             return true;
         }
         sleep(duration).await;
     }
-    log::warn!("{name} timed out waiting for port {addr}");
+    warn!("{name} timed out waiting for port {addr}");
     false
 }

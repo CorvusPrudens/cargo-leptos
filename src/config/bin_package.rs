@@ -2,12 +2,10 @@ use camino::Utf8PathBuf;
 use cargo_metadata::{Metadata, Target};
 
 use super::{project::ProjectDefinition, BuildTargets, Profile, ProjectConfig};
+use crate::internal_prelude::*;
 use crate::{
     config::Opts,
-    ext::{
-        anyhow::{anyhow, bail, Error, Result},
-        MetadataExt, PackageExt, PathBufExt, PathExt,
-    },
+    ext::{MetadataExt, PackageExt, PathBufExt, PathExt},
 };
 pub struct BinPackage {
     pub name: String,
@@ -53,7 +51,7 @@ impl BinPackage {
         let package = packages
             .iter()
             .find(|p| p.name == name && p.has_bin_target())
-            .ok_or_else(|| anyhow!(r#"Could not find the project bin-package "{name}""#,))?;
+            .ok_or_else(|| eyre!(r#"Could not find the project bin-package "{name}""#,))?;
 
         let package = (*package).clone();
 
@@ -85,7 +83,12 @@ impl BinPackage {
             &config.bin_profile_dev,
         );
         let exe_file = {
-            let file_ext = if cfg!(target_os = "windows") {
+            let file_ext = if cfg!(target_os = "windows")
+                && config
+                    .bin_target_triple
+                    .as_ref()
+                    .is_none_or(|triple| triple.contains("-pc-windows-"))
+            {
                 "exe"
             } else if config
                 .bin_target_triple
@@ -123,7 +126,12 @@ impl BinPackage {
             src_paths.push(rel_dir.join("src"));
         }
 
-        log::debug!("BEFORE BIN {:?}", config.bin_cargo_command);
+        let cargo_args = cli
+            .bin_cargo_args
+            .clone()
+            .or_else(|| config.bin_cargo_args.clone());
+
+        debug!("BEFORE BIN {:?}", config.bin_cargo_command);
         Ok(Self {
             name,
             abs_dir,
@@ -137,7 +145,7 @@ impl BinPackage {
             target_triple: config.bin_target_triple.clone(),
             target_dir: config.bin_target_dir.clone(),
             cargo_command: config.bin_cargo_command.clone(),
-            cargo_args: cli.bin_cargo_args.clone(),
+            cargo_args,
             bin_args: bin_args.map(ToOwned::to_owned),
             skipped: build_targets.map(|t| t.skip_bin()).unwrap_or_default(),
         })
@@ -169,12 +177,12 @@ impl std::fmt::Debug for BinPackage {
 }
 
 fn many_targets_found(pkg: &str) -> Error {
-    anyhow!(
+    eyre!(
         r#"Several bin targets found for member "{pkg}", please specify which one to use with: [[workspace.metadata.leptos]] bin-target = "name""#
     )
 }
 fn target_not_found(target: &str) -> Error {
-    anyhow!(
+    eyre!(
         r#"Could not find the target specified: [[workspace.metadata.leptos]] bin-target = "{target}""#,
     )
 }
